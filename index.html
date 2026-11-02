@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Squad Pirate Chest Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <style>
+    * {
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body {
+      background: radial-gradient(circle at top, #1e293b 0%, #090d16 100%);
+      min-height: 100vh;
+    }
+    .chest-btn {
+      background: radial-gradient(circle at 30% 30%, #fbbf24, #d97706, #92400e);
+      box-shadow: 0 0 35px rgba(245, 158, 11, 0.45), inset 0 4px 10px rgba(255, 255, 255, 0.4);
+      transition: transform 0.08s ease, box-shadow 0.08s ease;
+    }
+    .chest-btn:active {
+      transform: scale(0.93);
+      box-shadow: 0 0 15px rgba(245, 158, 11, 0.7), inset 0 2px 5px rgba(0, 0, 0, 0.4);
+    }
+  </style>
+</head>
+<body class="text-white font-sans flex flex-col items-center px-4 py-5">
+
+  <!-- Header -->
+  <header class="w-full max-w-md text-center mb-4">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold tracking-wider uppercase mb-1">
+      🏴‍☠️ Pirate Shop Grind
+    </div>
+    <h1 class="text-2xl font-extrabold tracking-tight text-white">Squad Chest Counter</h1>
+  </header>
+
+  <!-- Player Selector -->
+  <div class="w-full max-w-md bg-slate-900/90 border border-slate-800 rounded-2xl p-2 mb-5">
+    <p class="text-[11px] text-slate-400 text-center uppercase tracking-wider font-semibold mb-2">Tap Your Name</p>
+    <div class="grid grid-cols-4 gap-1.5" id="player-buttons">
+      <button onclick="selectPlayer('Mizan')" id="btn-Mizan" class="player-tab py-2.5 rounded-xl font-bold text-sm transition-all">Mizan</button>
+      <button onclick="selectPlayer('Tharan')" id="btn-Tharan" class="player-tab py-2.5 rounded-xl font-bold text-sm transition-all">Tharan</button>
+      <button onclick="selectPlayer('Viren')" id="btn-Viren" class="player-tab py-2.5 rounded-xl font-bold text-sm transition-all">Viren</button>
+      <button onclick="selectPlayer('Loki')" id="btn-Loki" class="player-tab py-2.5 rounded-xl font-bold text-sm transition-all">Loki</button>
+    </div>
+  </div>
+
+  <!-- Squad Total & Probability Banner -->
+  <div class="w-full max-w-md grid grid-cols-2 gap-3 mb-6">
+    <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5 text-center">
+      <p class="text-xs text-slate-400 uppercase font-semibold">Squad Total</p>
+      <p id="squad-total" class="text-3xl font-black text-amber-400 mt-0.5">0</p>
+    </div>
+    <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5 text-center">
+      <p class="text-xs text-slate-400 uppercase font-semibold">Pull Probability</p>
+      <p id="squad-prob" class="text-2xl font-black text-emerald-400 mt-1">0.00000%</p>
+      <p class="text-[10px] text-slate-500 mt-0.5">1 in 700,000 / chest</p>
+    </div>
+  </div>
+
+  <!-- Giant Center Chest Button -->
+  <div class="my-2 flex flex-col items-center">
+    <button onclick="updateChests(1)" class="chest-btn w-48 h-48 rounded-full flex flex-col items-center justify-center border-4 border-amber-300/80 relative">
+      <span class="text-5xl mb-1">🧰</span>
+      <span class="text-3xl font-black tracking-tight text-slate-950 drop-shadow">+1 CHEST</span>
+      <span id="active-player-label" class="text-xs font-extrabold uppercase tracking-wider text-amber-950 mt-1 bg-white/30 px-2.5 py-0.5 rounded-full">
+        Mizan
+      </span>
+    </button>
+
+    <!-- QoL Extra Buttons (-1 and +5) -->
+    <div class="flex items-center gap-4 mt-5 w-full justify-center">
+      <button onclick="updateChests(-1)" class="px-5 py-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 font-bold text-sm active:scale-95 transition">
+        -1 (Undo)
+      </button>
+      <button onclick="updateChests(5)" class="px-6 py-3 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 font-extrabold text-sm active:scale-95 transition">
+        +5 Chests ⚡
+      </button>
+    </div>
+  </div>
+
+  <!-- Live Squad Leaderboard -->
+  <div class="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-2xl p-4 mt-6">
+    <div class="flex justify-between items-center mb-3">
+      <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Squad Leaderboard</h2>
+      <span id="sync-status" class="text-[11px] text-emerald-400 font-medium">● Live Sync</span>
+    </div>
+    <div id="leaderboard" class="space-y-2">
+      <!-- Populated by JS -->
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // PASTE YOUR 2 URLS RIGHT HERE:
+    // =========================================================================
+    const DATABASE_URL = "https://fortnite-chest-tracker-default-rtdb.asia-southeast1.firebasedatabase.app/";
+    const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1566792165110055035/dHc2ckfjmHBZjFdnbYpwTgcx5jBkZH8Xxs9lcHAFvD5r7aI-HiQObVRLruWGm2Ypdrzy";
+    // =========================================================================
+
+    const PLAYERS = ["Mizan", "Tharan", "Viren", "Loki"];
+    const ODDS_PER_CHEST = 1 / 700000;
+
+    let currentPlayer = localStorage.getItem("selectedSquadPlayer") || "Mizan";
+    let playerCounts = { Mizan: 0, Tharan: 0, Viren: 0, Loki: 0 };
+    let discordMessageId = null;
+    let discordTimeout = null;
+
+    // Initialize Firebase
+    firebase.initializeApp({ databaseURL: DATABASE_URL });
+    const db = firebase.database();
+
+    // Highlight active player tab
+    function selectPlayer(name) {
+      currentPlayer = name;
+      localStorage.setItem("selectedSquadPlayer", name);
+      document.getElementById("active-player-label").innerText = name;
+
+      PLAYERS.forEach(p => {
+        const btn = document.getElementById(`btn-${p}`);
+        if (p === name) {
+          btn.className = "player-tab py-2.5 rounded-xl font-extrabold text-sm bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/25";
+        } else {
+          btn.className = "player-tab py-2.5 rounded-xl font-semibold text-sm bg-slate-800/80 text-slate-300 hover:bg-slate-800";
+        }
+      });
+    }
+
+    // Listen to live database changes
+    db.ref("squadData").on("value", (snapshot) => {
+      const data = snapshot.val() || {};
+      const counts = data.players || {};
+      discordMessageId = data.discordMessageId || null;
+
+      PLAYERS.forEach(p => {
+        playerCounts[p] = Math.max(0, counts[p] || 0);
+      });
+
+      renderUI();
+    });
+
+    // Update Chest Count
+    function updateChests(delta) {
+      if (navigator.vibrate) navigator.vibrate(35);
+
+      const currentVal = playerCounts[currentPlayer] || 0;
+      if (delta < 0 && currentVal <= 0) return; // Prevent negative counts
+
+      const newVal = Math.max(0, currentVal + delta);
+      db.ref(`squadData/players/${currentPlayer}`).set(newVal);
+
+      // Debounce Discord webhook update (waits 2.5s after rapid clicks finish)
+      clearTimeout(discordTimeout);
+      discordTimeout = setTimeout(() => {
+        syncToDiscord();
+      }, 2500);
+    }
+
+    // Calculate Cumulative Probability: 1 - (1 - p)^N
+    function calculateProbability(totalChests) {
+      if (totalChests <= 0) return "0.00000%";
+      const prob = (1 - Math.pow(1 - ODDS_PER_CHEST, totalChests)) * 100;
+      return prob.toFixed(5) + "%";
+    }
+
+    // Render UI & Leaderboard
+    function renderUI() {
+      const total = PLAYERS.reduce((sum, p) => sum + (playerCounts[p] || 0), 0);
+      document.getElementById("squad-total").innerText = total.toLocaleString();
+      document.getElementById("squad-prob").innerText = calculateProbability(total);
+
+      const sorted = [...PLAYERS].sort((a, b) => playerCounts[b] - playerCounts[a]);
+      const medals = ["🥇", "🥈", "🥉", "🏴‍☠️"];
+
+      document.getElementById("leaderboard").innerHTML = sorted.map((p, idx) => {
+        const count = playerCounts[p] || 0;
+        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+        return `
+          <div class="flex items-center justify-between bg-slate-800/60 border border-slate-700/50 px-3.5 py-2.5 rounded-xl">
+            <div class="flex items-center gap-2.5">
+              <span class="text-base">${medals[idx]}</span>
+              <span class="font-bold text-sm ${p === currentPlayer ? 'text-amber-400' : 'text-white'}">${p}</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-xs text-slate-400">${pct}%</span>
+              <span class="font-black text-base text-amber-300 w-12 text-right">${count.toLocaleString()}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Sync Live Embed to Discord Webhook (Edits existing message so it never spams the channel)
+    async function syncToDiscord() {
+      if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL.includes("PASTE_YOUR")) return;
+
+      const total = PLAYERS.reduce((sum, p) => sum + (playerCounts[p] || 0), 0);
+      const prob = calculateProbability(total);
+      const sorted = [...PLAYERS].sort((a, b) => playerCounts[b] - playerCounts[a]);
+      const medals = ["🥇", "🥈", "🥉", "🏴‍☠️"];
+
+      const leaderboardText = sorted.map((p, i) =>
+        `${medals[i]} **${p}**: \`${playerCounts[p].toLocaleString()}\` chests`
+      ).join("\n");
+
+      const payload = {
+        username: "Pirate Shop Tracker",
+        embeds: [{
+          title: "🏴‍☠️ Squad Pirate Chest Counter",
+          color: 16098851,
+          fields: [
+            { name: "🧰 Total Squad Chests", value: `**${total.toLocaleString()}**`, inline: true },
+            { name: "🎲 Pirate Shop Probability", value: `**${prob}**`, inline: true },
+            { name: "🏆 Squad Leaderboard", value: leaderboardText, inline: false }
+          ],
+          footer: { text: `Last updated by ${currentPlayer} • Odds: 1 in 700,000 per chest` },
+          timestamp: new Date().toISOString()
+        }]
+      };
+
+      try {
+        if (discordMessageId) {
+          // Edit existing scoreboard message in Discord
+          const res = await fetch(`${DISCORD_WEBHOOK_URL}/messages/${discordMessageId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (res.status === 404) {
+            discordMessageId = null; // Message was deleted in Discord, create a new one below
+          } else {
+            return;
+          }
+        }
+
+        // Create initial scoreboard message and save its ID to Firebase
+        const res = await fetch(`${DISCORD_WEBHOOK_URL}?wait=true`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const msg = await res.json();
+        if (msg && msg.id) {
+          db.ref("squadData/discordMessageId").set(msg.id);
+        }
+      } catch (err) {
+        console.error("Discord webhook sync error:", err);
+      }
+    }
+
+    // Initialize default selected player UI
+    selectPlayer(currentPlayer);
+  </script>
+</body>
+</html>
